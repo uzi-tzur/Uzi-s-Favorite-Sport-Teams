@@ -16,8 +16,34 @@ import {
   getAlarmMessage,
   type GameAlarm,
 } from "@/lib/alarms";
+import {
+  getWatchlist,
+  toggleWatched,
+  removeWatched,
+  findOverlaps,
+  type WatchedGame,
+} from "@/lib/watchlist";
 
 const ALARM_CHECK_INTERVAL_MS = 30 * 1000;
+
+const myGamesDayFormatter = new Intl.DateTimeFormat("en-US", {
+  weekday: "long",
+  month: "long",
+  day: "numeric",
+  timeZone: "America/Chicago",
+});
+
+// Watched games grouped by day (Central Time, like the rest of the page), in time order
+function groupWatchedByDay(games: WatchedGame[]) {
+  const days: Array<{ label: string; games: WatchedGame[] }> = [];
+  games.forEach((game) => {
+    const label = myGamesDayFormatter.format(new Date(game.startTime));
+    const day = days.find((d) => d.label === label);
+    if (day) day.games.push(game);
+    else days.push({ label, games: [game] });
+  });
+  return days;
+}
 
 // Link to a one-game .ics file; iPhone opens it as "Add to Calendar"
 function getCalendarFileUrl(game: CalendarEvent): string {
@@ -43,7 +69,7 @@ function getDayLabels(numDays = 7) {
   });
 }
 
-type ViewMode = "grid" | "list";
+type ViewMode = "grid" | "list" | "mine";
 type SportFilter = "all" | "Soccer" | "Football" | "Basketball";
 type DayFilter = "all" | string;
 
@@ -135,6 +161,23 @@ export default function CalendarClient({
   // Alarms that fired while the page was open, shown on screen as well
   const [dueAlarms, setDueAlarms] = useState<GameAlarm[]>([]);
   const [alarmNotice, setAlarmNotice] = useState<string | null>(null);
+  const [watchlist, setWatchlist] = useState<WatchedGame[]>([]);
+
+  const watchedIds = useMemo(
+    () => new Set(watchlist.map((game) => game.gameId)),
+    [watchlist]
+  );
+  const watchedByDay = useMemo(() => groupWatchedByDay(watchlist), [watchlist]);
+  const watchOverlaps = useMemo(() => findOverlaps(watchlist), [watchlist]);
+
+  // Loaded after mount: localStorage isn't available during server render
+  useEffect(() => {
+    setWatchlist(getWatchlist());
+  }, []);
+
+  const handleToggleWatched = (game: CalendarEvent & { gameId: string }) => {
+    setWatchlist(toggleWatched(game));
+  };
 
   // Memoize startOfWeek to avoid recreating on every render
   const startOfWeek = useMemo(() => new Date(startOfWeekStr), [startOfWeekStr]);
@@ -299,6 +342,16 @@ export default function CalendarClient({
                 }`}
               >
                 List View
+              </button>
+              <button
+                onClick={() => setViewMode("mine")}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition ${
+                  viewMode === "mine"
+                    ? "bg-sky-600 text-white"
+                    : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                ★ My Games ({watchlist.length})
               </button>
             </div>
 
@@ -593,6 +646,17 @@ export default function CalendarClient({
                                 📅 Add to Calendar
                               </a>
                               <button
+                                onClick={() => handleToggleWatched(game)}
+                                aria-pressed={watchedIds.has(game.gameId)}
+                                className={`inline-flex items-center gap-1 text-sm font-medium ${
+                                  watchedIds.has(game.gameId)
+                                    ? "text-amber-600 hover:text-amber-700"
+                                    : "text-gray-600 hover:text-gray-700"
+                                }`}
+                              >
+                                {watchedIds.has(game.gameId) ? "★ In My Games" : "☆ Watch"}
+                              </button>
+                              <button
                                 onClick={() => handleToggleAlarm(game)}
                                 className={`inline-flex items-center gap-1 text-sm font-medium ${
                                   alarmSet
@@ -771,6 +835,17 @@ export default function CalendarClient({
                               📅 Add to Calendar
                             </a>
                             <button
+                              onClick={() => handleToggleWatched(game)}
+                              aria-pressed={watchedIds.has(game.gameId)}
+                              className={`inline-flex items-center gap-1 text-sm font-medium ${
+                                watchedIds.has(game.gameId)
+                                  ? "text-amber-600 hover:text-amber-700"
+                                  : "text-gray-600 hover:text-gray-700"
+                              }`}
+                            >
+                              {watchedIds.has(game.gameId) ? "★ In My Games" : "☆ Watch"}
+                            </button>
+                            <button
                               onClick={() => handleToggleAlarm(game)}
                               className={`inline-flex items-center gap-1 text-sm font-medium ${
                                 alarmSet
@@ -826,6 +901,101 @@ export default function CalendarClient({
               })
             )}
           </ul>
+        </div>
+      )}
+
+      {/* My Games: the viewer's plan, day by day in time order */}
+      {viewMode === "mine" && (
+        <div className="space-y-6">
+          {watchedByDay.length === 0 ? (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 px-6 py-12 text-center text-sm text-gray-500">
+              No games picked yet. Tap <span className="font-semibold">☆ Watch</span> on any
+              game in Grid or List view to add it to your plan.
+            </div>
+          ) : (
+            watchedByDay.map((day) => (
+              <article
+                key={day.label}
+                className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden"
+              >
+                <header className="px-6 py-4 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold text-gray-900">{day.label}</h2>
+                  <span className="text-sm text-gray-500">
+                    {day.games.length} {day.games.length === 1 ? "game" : "games"}
+                  </span>
+                </header>
+                <ol className="divide-y divide-gray-100">
+                  {day.games.map((watched) => {
+                    const game = { ...watched, startTime: new Date(watched.startTime) };
+                    const logo = getTeamLogo(game.teamName);
+                    const overlapsWith = watchOverlaps.get(game.gameId);
+                    return (
+                      <li key={game.gameId} className="px-6 py-4 flex items-start gap-4">
+                        <div className="w-24 flex-shrink-0 text-right">
+                          <p className="text-base font-semibold text-sky-600">
+                            {timeFormatter.format(game.startTime)} CT
+                          </p>
+                          <p className="text-xs text-gray-500">
+                            {israelTimeFormatter.format(game.startTime)} Israel
+                          </p>
+                        </div>
+                        {logo && (
+                          <div className="relative w-10 h-10 flex-shrink-0">
+                            <Image
+                              src={logo}
+                              alt={`${game.teamName} logo`}
+                              fill
+                              className="object-contain"
+                              sizes="40px"
+                            />
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0 space-y-1">
+                          <p className="font-semibold text-gray-900">{game.matchup}</p>
+                          <p className="text-sm text-gray-600">
+                            {game.sport} · {game.competition}
+                          </p>
+                          {(game.network || game.israeliTv) && (
+                            <p className="text-sm text-gray-600">
+                              {game.network && `📺 ${game.network}`}
+                              {game.network && game.israeliTv && " · "}
+                              {game.israeliTv && (
+                                <span className="font-semibold text-blue-700">
+                                  🇮🇱{" "}
+                                  <span lang="he" dir="rtl">
+                                    {game.israeliTv}
+                                  </span>
+                                </span>
+                              )}
+                            </p>
+                          )}
+                          {overlapsWith && (
+                            <p className="text-xs font-medium text-orange-700">
+                              ⚠ Overlaps with {overlapsWith.join(", ")}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pt-1">
+                            <a
+                              href={getCalendarFileUrl(game)}
+                              className="inline-flex items-center gap-1 text-sm text-emerald-700 hover:text-emerald-800 font-medium"
+                            >
+                              📅 Add to Calendar
+                            </a>
+                            <button
+                              onClick={() => setWatchlist(removeWatched(game.gameId))}
+                              className="text-sm font-medium text-red-600 hover:text-red-700"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </article>
+            ))
+          )}
         </div>
       )}
     </>
