@@ -102,17 +102,6 @@ export default async function CalendarPage() {
               </Link>
             ))}
           </div>
-          <div className="flex flex-wrap justify-center gap-3 text-sm sm:text-base">
-            <span className="bg-white/15 border border-white/30 rounded-full px-4 py-2">
-              Times listed in Central Time
-            </span>
-            <span className="bg-white/15 border border-white/30 rounded-full px-4 py-2">
-              Broadcast partners &amp; streaming info included
-            </span>
-            <span className="bg-white/15 border border-white/30 rounded-full px-4 py-2">
-              🇮🇱 Israeli channels: Sport 1–4 &amp; Sport 5
-            </span>
-          </div>
         </div>
       </section>
 
