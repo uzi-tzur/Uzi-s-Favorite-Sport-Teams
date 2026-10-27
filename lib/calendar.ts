@@ -242,11 +242,13 @@ const THESPORTSDB_LEAGUE_API_BASE =
   "https://www.thesportsdb.com/api/v1/json/123/eventsseason.php";
 
 // ESPN API types
+// Team schedules use { media, market: { type } }; scoreboards use { names, market: "national" }
 interface ESPNBroadcast {
+  media?: { shortName?: string };
   medium?: { shortName?: string };
   shortName?: string;
   names?: string[];
-  market?: string;
+  market?: string | { type?: string };
   channel?: string;
 }
 
@@ -317,14 +319,23 @@ function extractEspnBroadcasts(competition: ESPNCompetition | undefined): string
   const broadcasts: ESPNBroadcast[] = competition?.broadcasts ?? [];
   if (!broadcasts.length) return undefined;
 
+  const asText = (value: unknown) =>
+    typeof value === "string" && value.trim() ? value.trim() : undefined;
+  const marketOf = (broadcast: ESPNBroadcast) =>
+    (typeof broadcast.market === "string" ? broadcast.market : broadcast.market?.type)?.toLowerCase();
+
+  // National channels when there are any; local / team streams otherwise
+  const national = broadcasts.filter((broadcast) => marketOf(broadcast) === "national");
+  const shown = national.length ? national : broadcasts;
+
   const uniqueNames = new Set<string>();
-  broadcasts.forEach((broadcast) => {
+  shown.forEach((broadcast) => {
     const name =
-      broadcast.medium?.shortName ||
-      broadcast.shortName ||
-      broadcast.names?.[0] ||
-      broadcast.market ||
-      broadcast.channel;
+      asText(broadcast.media?.shortName) ||
+      asText(broadcast.medium?.shortName) ||
+      asText(broadcast.shortName) ||
+      asText(broadcast.names?.[0]) ||
+      asText(broadcast.channel);
     if (name) uniqueNames.add(name);
   });
 
