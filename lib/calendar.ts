@@ -1,3 +1,13 @@
+import {
+  HEBREW_CLUB_NAMES,
+  fetchIsraeliTvListings,
+  findIsraeliChannels,
+  findIsraeliTvGames,
+  israelDateKey,
+  type IsraeliTvListing,
+  type IsraeliTvMatcher,
+} from "./israeliTv";
+
 type ESPNTeamConfig = {
   type: "espn";
   sportPath: string;
@@ -20,12 +30,21 @@ type SportsDBTeamConfig = {
   leagueId?: string; // Optional league ID for league-based fetching
 };
 
+// Games come straight from the Israeli TV guides (Sport 1-5): used for
+// Israeli teams, whose fixtures the other feeds do not carry reliably
+type IsraeliTvConfig = {
+  type: "israeli-tv";
+};
+
 type TeamScheduleConfig = {
   teamName: string;
   sport: string;
   competition: string;
   scheduleUrl: string;
-  source: ESPNTeamConfig | ESPNLeagueConfig | SportsDBTeamConfig;
+  source: ESPNTeamConfig | ESPNLeagueConfig | SportsDBTeamConfig | IsraeliTvConfig;
+  // How Israeli TV guides (Sport 1-5) write this team / competition
+  hebrewNames?: string[];
+  hebrewCompetition?: string[];
 };
 
 export type CalendarEvent = {
@@ -35,6 +54,7 @@ export type CalendarEvent = {
   matchup: string;
   location?: string;
   network?: string;
+  israeliTv?: string;
   startTime: Date;
   scheduleUrl: string;
 };
@@ -42,6 +62,7 @@ export type CalendarEvent = {
 const teamConfigs: TeamScheduleConfig[] = [
   {
     teamName: "Dallas Mavericks",
+    hebrewNames: ["דאלאס"],
     sport: "Basketball",
     competition: "NBA",
     scheduleUrl:
@@ -56,6 +77,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "Brooklyn Nets",
+    hebrewNames: ["ברוקלין"],
     sport: "Basketball",
     competition: "NBA",
     scheduleUrl: "https://www.espn.com/nba/team/schedule/_/name/bkn",
@@ -69,6 +91,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "Portland Trail Blazers",
+    hebrewNames: ["פורטלנד"],
     sport: "Basketball",
     competition: "NBA",
     scheduleUrl:
@@ -83,6 +106,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "Dallas Cowboys",
+    hebrewNames: ["דאלאס"],
     sport: "Football",
     competition: "NFL",
     scheduleUrl:
@@ -97,6 +121,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "Texas Longhorns",
+    hebrewNames: ["טקסס"],
     sport: "Football",
     competition: "NCAA",
     scheduleUrl:
@@ -111,6 +136,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "FC Barcelona",
+    hebrewNames: ["ברצלונה"],
     sport: "Soccer",
     competition: "La Liga",
     scheduleUrl:
@@ -125,6 +151,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "FC Infer Miami",
+    hebrewNames: ["אינטר מיאמי"],
     sport: "Soccer",
     competition: "MLS",
     scheduleUrl:
@@ -139,32 +166,24 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "B.C. Maccabi Tel Aviv",
+    hebrewNames: ['מכבי ת"א', "מכבי תל אביב"],
     sport: "Basketball",
     competition: "EuroLeague",
     scheduleUrl:
       "https://www.365scores.com/en-us/basketball/team/maccabi-tel-aviv-631/matches#fixtures",
-    source: {
-      type: "thesportsdb",
-      teamId: "136065",
-      displayName: "Maccabi Tel Aviv BC",
-      leagueId: "4546", // EuroLeague Basketball league ID
-    },
+    source: { type: "israeli-tv" },
   },
   {
     teamName: "F.C. Maccabi Tel Aviv",
+    hebrewNames: ['מכבי ת"א', "מכבי תל אביב"],
     sport: "Soccer",
     competition: "Israeli Premier League",
     scheduleUrl: "https://www.espn.com/soccer/team/fixtures/_/id/524/maccabi-tel-aviv",
-    source: {
-      type: "espn",
-      sportPath: "soccer/isr.1",
-      teamIdentifier: "524",
-      displayName: "Maccabi Tel Aviv",
-      abbreviation: "MTA",
-    },
+    source: { type: "israeli-tv" },
   },
   {
     teamName: "Premier League England",
+    hebrewCompetition: ["ליגה אנגלית", "הליגה האנגלית", "פרמייר ליג"],
     sport: "Soccer",
     competition: "Premier League",
     scheduleUrl: "https://www.espn.com/soccer/fixtures?league=eng.1",
@@ -177,6 +196,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "Spanish La Liga",
+    hebrewCompetition: ["ליגה ספרדית", "הליגה הספרדית"],
     sport: "Soccer",
     competition: "La Liga",
     scheduleUrl: "https://www.espn.com/soccer/schedule/_/league/esp.1",
@@ -189,6 +209,7 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "UEFA Champions League",
+    hebrewCompetition: ["ליגת האלופות"],
     sport: "Soccer",
     competition: "UEFA Champions League",
     scheduleUrl: "https://www.espn.com/soccer/schedule/_/league/uefa.champions",
@@ -202,10 +223,11 @@ const teamConfigs: TeamScheduleConfig[] = [
 ];
 
 const ESPN_API_BASE = "https://site.api.espn.com/apis/site/v2/sports";
+const LEAGUE_DAYS_AHEAD = 14;
 const THESPORTSDB_API_BASE =
-  "https://www.thesportsdb.com/api/v1/json/3/eventsnext.php";
+  "https://www.thesportsdb.com/api/v1/json/123/eventsnext.php";
 const THESPORTSDB_LEAGUE_API_BASE =
-  "https://www.thesportsdb.com/api/v1/json/3/eventsseason.php";
+  "https://www.thesportsdb.com/api/v1/json/123/eventsseason.php";
 
 // ESPN API types
 interface ESPNBroadcast {
@@ -353,7 +375,9 @@ function buildMatchup(
 async function fetchFromEspn(
   config: TeamScheduleConfig & { source: ESPNTeamConfig }
 ): Promise<CalendarEvent[]> {
-  const url = `${ESPN_API_BASE}/${config.source.sportPath}/teams/${config.source.teamIdentifier}/schedule`;
+  // Soccer team schedules only list past results unless fixture=true
+  const fixtureQuery = config.source.sportPath.startsWith("soccer/") ? "?fixture=true" : "";
+  const url = `${ESPN_API_BASE}/${config.source.sportPath}/teams/${config.source.teamIdentifier}/schedule${fixtureQuery}`;
 
   try {
     console.log(`[${config.teamName}] Fetching schedule from: ${url}`);
@@ -476,42 +500,36 @@ async function fetchFromEspn(
 async function fetchFromEspnLeague(
   config: TeamScheduleConfig & { source: ESPNLeagueConfig }
 ): Promise<CalendarEvent[]> {
-  // Try schedule endpoint first for upcoming games, fallback to scoreboard
-  // For leagues, we use the schedule endpoint to get upcoming fixtures
-  // If schedule endpoint doesn't work, we'll try scoreboard for multiple upcoming dates
-  let url = `${ESPN_API_BASE}/${config.source.sportPath}/${config.source.leaguePath}/schedule`;
+  // ESPN has no league schedule endpoint for soccer and its scoreboard
+  // ignores date ranges, so read the scoreboard one day at a time
+  const baseUrl = `${ESPN_API_BASE}/${config.source.sportPath}/${config.source.leaguePath}/scoreboard`;
   let allEvents: ESPNEvent[] = [];
 
   try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "Mozilla/5.0" },
-      cache: "no-store",
+    const days = Array.from({ length: LEAGUE_DAYS_AHEAD }, (_, index) => {
+      const day = new Date();
+      day.setUTCDate(day.getUTCDate() + index);
+      return day.toISOString().slice(0, 10).replace(/-/g, "");
     });
 
-    if (res.ok) {
-      const data = (await res.json()) as ESPNResponse;
-      allEvents = data.events ?? [];
-    } else {
-      // If schedule endpoint fails, try scoreboard endpoint
-      console.warn(
-        `Schedule endpoint failed for ${config.teamName}, trying scoreboard: ${res.status} - ${url}`
-      );
-      url = `${ESPN_API_BASE}/${config.source.sportPath}/${config.source.leaguePath}/scoreboard`;
-      const scoreboardRes = await fetch(url, {
-        headers: { "User-Agent": "Mozilla/5.0" },
-        cache: "no-store",
-      });
-
-      if (!scoreboardRes.ok) {
-        console.error(
-          `Failed to fetch ESPN league schedule for ${config.teamName}: ${scoreboardRes.status} - ${url}`
-        );
-        return [];
-      }
-
-      const scoreboardData = (await scoreboardRes.json()) as ESPNResponse;
-      allEvents = scoreboardData.events ?? [];
-    }
+    const responses = await Promise.all(
+      days.map(async (day) => {
+        const url = `${baseUrl}?dates=${day}`;
+        const res = await fetch(url, {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          console.error(
+            `Failed to fetch ESPN league schedule for ${config.teamName}: ${res.status} - ${url}`
+          );
+          return [];
+        }
+        const data = (await res.json()) as ESPNResponse;
+        return data.events ?? [];
+      })
+    );
+    allEvents = responses.flat();
 
     const now = new Date();
 
@@ -523,13 +541,8 @@ async function fetchFromEspnLeague(
         const startTime = event.date ? new Date(event.date) : undefined;
         if (!startTime || Number.isNaN(startTime.getTime())) return null;
 
-        // Only include upcoming events (within next 90 days to show more upcoming games)
-        const ninetyDaysFromNow = new Date(now);
-        ninetyDaysFromNow.setDate(ninetyDaysFromNow.getDate() + 90);
-        if (
-          startTime.getTime() < now.getTime() ||
-          startTime.getTime() > ninetyDaysFromNow.getTime()
-        ) {
+        // Only include upcoming events
+        if (startTime.getTime() < now.getTime()) {
           return null;
         }
 
@@ -754,28 +767,94 @@ async function fetchFromSportsDB(
   }
 }
 
+// Israeli guides only publish about ten days ahead
+const ISRAELI_TV_DAYS_AHEAD = 10;
+
+function buildIsraeliTvMatcher(
+  config: TeamScheduleConfig,
+  event: CalendarEvent
+): IsraeliTvMatcher {
+  if (config.source.type === "espn-league") {
+    // League games: look up both clubs from "Home vs. Away"
+    const hebrewNames = event.matchup
+      .split(" vs. ")
+      .flatMap((club) => HEBREW_CLUB_NAMES[club.trim()] ?? []);
+    return {
+      startTime: event.startTime,
+      sport: config.sport,
+      hebrewNames,
+      competitionKeywords: config.hebrewCompetition,
+    };
+  }
+
+  return {
+    startTime: event.startTime,
+    sport: config.sport,
+    hebrewNames: config.hebrewNames ?? [],
+  };
+}
+
+function getIsraeliTvDateKeys(): string[] {
+  const dateKeys = new Set<string>();
+  for (let index = 0; index < ISRAELI_TV_DAYS_AHEAD; index++) {
+    dateKeys.add(israelDateKey(new Date(Date.now() + index * 24 * 60 * 60 * 1000)));
+  }
+  return Array.from(dateKeys);
+}
+
+function eventsFromIsraeliTv(
+  config: TeamScheduleConfig,
+  listings: IsraeliTvListing[]
+): CalendarEvent[] {
+  return findIsraeliTvGames(config.hebrewNames ?? [], config.sport, listings).map(
+    (game) => ({
+      teamName: config.teamName,
+      sport: config.sport,
+      competition: game.competition || config.competition,
+      matchup: game.matchup,
+      israeliTv: game.channels,
+      startTime: game.startTime,
+      scheduleUrl: config.scheduleUrl,
+    })
+  );
+}
+
 export async function getAllUpcomingEvents(): Promise<CalendarEvent[]> {
-  const events = await Promise.all(
-    teamConfigs.map((config) => {
-      if (config.source.type === "espn") {
-        return fetchFromEspn(
+  const listingsPromise = fetchIsraeliTvListings(getIsraeliTvDateKeys());
+
+  const eventsByConfig = await Promise.all(
+    teamConfigs.map(async (config) => {
+      let events: CalendarEvent[];
+      if (config.source.type === "israeli-tv") {
+        events = eventsFromIsraeliTv(config, await listingsPromise);
+      } else if (config.source.type === "espn") {
+        events = await fetchFromEspn(
           config as TeamScheduleConfig & { source: ESPNTeamConfig }
         );
-      }
-
-      if (config.source.type === "espn-league") {
-        return fetchFromEspnLeague(
+      } else if (config.source.type === "espn-league") {
+        events = await fetchFromEspnLeague(
           config as TeamScheduleConfig & { source: ESPNLeagueConfig }
         );
+      } else {
+        events = await fetchFromSportsDB(
+          config as TeamScheduleConfig & { source: SportsDBTeamConfig }
+        );
       }
-
-      return fetchFromSportsDB(
-        config as TeamScheduleConfig & { source: SportsDBTeamConfig }
-      );
+      return { config, events };
     })
   );
 
-  return events.flat();
+  const listings = await listingsPromise;
+  return eventsByConfig.flatMap(({ config, events }) =>
+    events.map((event) => {
+      if (event.israeliTv) return event;
+      const israeliTv = findIsraeliChannels(
+        buildIsraeliTvMatcher(config, event),
+        listings
+      );
+      return israeliTv ? { ...event, israeliTv } : event;
+    })
+  );
 }
 
 export function getEventsForWeek(

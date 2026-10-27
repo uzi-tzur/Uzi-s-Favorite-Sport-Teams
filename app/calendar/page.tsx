@@ -78,7 +78,16 @@ export default async function CalendarPage() {
                 </span>{" "}
                 on {weekdayFormatter.format(nextGame.startTime)} at{" "}
                 {timeFormatter.format(nextGame.startTime)} CT (
-                {nextGame.network ?? "network TBA"})
+                {nextGame.network ?? (nextGame.israeliTv ? "" : "network TBA")}
+                {nextGame.israeliTv && (
+                  <>
+                    {nextGame.network ? " · 🇮🇱 " : "🇮🇱 "}
+                    <span lang="he" dir="rtl">
+                      {nextGame.israeliTv}
+                    </span>
+                  </>
+                )}
+                )
               </p>
             )}
           </div>
@@ -99,6 +108,9 @@ export default async function CalendarPage() {
             </span>
             <span className="bg-white/15 border border-white/30 rounded-full px-4 py-2">
               Broadcast partners &amp; streaming info included
+            </span>
+            <span className="bg-white/15 border border-white/30 rounded-full px-4 py-2">
+              🇮🇱 Israeli channels: Sport 1–4 &amp; Sport 5
             </span>
           </div>
         </div>

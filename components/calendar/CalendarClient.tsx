@@ -48,6 +48,12 @@ const timeFormatter = new Intl.DateTimeFormat("en-US", {
   timeZone: "America/Chicago",
 });
 
+const israelTimeFormatter = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Asia/Jerusalem",
+});
+
 type DailySchedule = {
   label: string;
   date: Date;
@@ -546,9 +552,20 @@ export default function CalendarClient({
                             <p className="text-sm font-semibold text-sky-600">
                               {game.timeLabel} CT
                             </p>
-                            <p className="text-xs uppercase tracking-wide text-gray-500">
-                              {game.network ?? "Network TBA"}
-                            </p>
+                            {(game.network || !game.israeliTv) && (
+                              <p className="text-xs uppercase tracking-wide text-gray-500">
+                                {game.network ?? "Network TBA"}
+                              </p>
+                            )}
+                            {game.israeliTv && (
+                              <p className="text-xs font-semibold text-blue-700">
+                                🇮🇱{" "}
+                                <span lang="he" dir="rtl">
+                                  {game.israeliTv}
+                                </span>{" "}
+                                · {israelTimeFormatter.format(game.startTime)} IL
+                              </p>
+                            )}
                           </div>
                         </div>
                       </li>
@@ -638,6 +655,15 @@ export default function CalendarClient({
                           {game.network && (
                             <p className="text-sm text-gray-600">
                               📺 {game.network}
+                            </p>
+                          )}
+                          {game.israeliTv && (
+                            <p className="text-sm font-semibold text-blue-700">
+                              🇮🇱{" "}
+                              <span lang="he" dir="rtl">
+                                {game.israeliTv}
+                              </span>{" "}
+                              · {israelTimeFormatter.format(game.startTime)} Israel time
                             </p>
                           )}
                           <div className="flex items-center gap-3">
