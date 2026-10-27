@@ -22,8 +22,6 @@ export type IsraeliTvMatcher = {
   sport: string;
   // Hebrew names to look for in the listing text (our team, or both teams of a league game)
   hebrewNames: string[];
-  // Hebrew competition keywords, used only when no team name matched
-  competitionKeywords?: string[];
 };
 
 const ISRAEL_TZ = "Asia/Jerusalem";
@@ -282,18 +280,11 @@ export function findIsraeliChannels(
   });
 
   const names = matcher.hebrewNames.map(normalizeHebrew);
-  let matches = candidates.filter((listing) =>
+  // Only a listing that names one of the clubs counts: guessing by
+  // competition and time slot can attach another game's channel
+  const matches = candidates.filter((listing) =>
     names.some((name) => listing.text.includes(name))
   );
-
-  // League games whose clubs we have no Hebrew name for: accept the
-  // competition's listing only when it is the single one in the time slot
-  if (!matches.length && matcher.competitionKeywords?.length) {
-    const byCompetition = candidates.filter((listing) =>
-      matcher.competitionKeywords!.some((keyword) => listing.text.includes(keyword))
-    );
-    if (byCompetition.length === 1) matches = byCompetition;
-  }
 
   if (!matches.length) return undefined;
   return Array.from(new Set(matches.map((listing) => listing.channel))).join(" / ");
@@ -308,20 +299,24 @@ export const HEBREW_CLUB_NAMES: Record<string, string[]> = {
   "AFC Bournemouth": ["בורנמות'"],
   Brentford: ["ברנטפורד"],
   "Brighton & Hove Albion": ["ברייטון"],
+  "Coventry City": ["קובנטרי"],
   Burnley: ["ברנלי"],
   Chelsea: ["צ'לסי"],
   "Crystal Palace": ["קריסטל פאלאס"],
   Everton: ["אברטון"],
   Fulham: ["פולהאם"],
+  "Hull City": ["האל סיטי"],
+  "Ipswich Town": ["איפסוויץ'"],
   "Leeds United": ["לידס"],
   Liverpool: ["ליברפול"],
   "Manchester City": ["מנצ'סטר סיטי", "מן סיטי"],
   "Manchester United": ["מנצ'סטר יונייטד", "מן יונייטד"],
   "Newcastle United": ["ניוקאסל"],
   "Nottingham Forest": ["נוטינגהאם"],
+  Southampton: ["סאות'המפטון", "סאותהמפטון", "סאוטהמפטון"],
   Sunderland: ["סנדרלנד"],
   "Tottenham Hotspur": ["טוטנהאם"],
-  "West Ham United": ["ווסטהאם", "וסטהאם"],
+  "West Ham United": ["ווסטהאם", "וסטהאם", "ווסט האם", "וסט האם"],
   "Wolverhampton Wanderers": ["וולבס", "וולברהמפטון"],
   // La Liga
   Alavés: ["אלאבס"],

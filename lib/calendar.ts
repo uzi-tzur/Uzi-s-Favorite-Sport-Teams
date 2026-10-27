@@ -44,9 +44,8 @@ type TeamScheduleConfig = {
   competition: string;
   scheduleUrl: string;
   source: ESPNTeamConfig | ESPNLeagueConfig | SportsDBTeamConfig | IsraeliTvConfig;
-  // How Israeli TV guides (Sport 1-5) write this team / competition
+  // How Israeli TV guides (Sport 1-5) write this team
   hebrewNames?: string[];
-  hebrewCompetition?: string[];
 };
 
 export type CalendarEvent = {
@@ -185,7 +184,6 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "Premier League England",
-    hebrewCompetition: ["ליגה אנגלית", "הליגה האנגלית", "פרמייר ליג"],
     sport: "Soccer",
     competition: "Premier League",
     scheduleUrl: "https://www.espn.com/soccer/fixtures?league=eng.1",
@@ -197,8 +195,20 @@ const teamConfigs: TeamScheduleConfig[] = [
     },
   },
   {
+    teamName: "English Championship",
+    sport: "Soccer",
+    competition: "Championship",
+    scheduleUrl: "https://www.espn.com/soccer/schedule/_/league/eng.2",
+    source: {
+      type: "espn-league",
+      sportPath: "soccer",
+      leaguePath: "eng.2",
+      displayName: "Championship",
+      onlyTeams: ["Southampton", "West Ham United"],
+    },
+  },
+  {
     teamName: "Spanish La Liga",
-    hebrewCompetition: ["ליגה ספרדית", "הליגה הספרדית"],
     sport: "Soccer",
     competition: "La Liga",
     scheduleUrl: "https://www.espn.com/soccer/schedule/_/league/esp.1",
@@ -212,7 +222,6 @@ const teamConfigs: TeamScheduleConfig[] = [
   },
   {
     teamName: "UEFA Champions League",
-    hebrewCompetition: ["ליגת האלופות"],
     sport: "Soccer",
     competition: "UEFA Champions League",
     scheduleUrl: "https://www.espn.com/soccer/schedule/_/league/uefa.champions",
@@ -798,7 +807,6 @@ function buildIsraeliTvMatcher(
       startTime: event.startTime,
       sport: config.sport,
       hebrewNames,
-      competitionKeywords: config.hebrewCompetition,
     };
   }
 
