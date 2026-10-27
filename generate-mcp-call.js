@@ -7,4 +7,4 @@ console.log('Generating MCP tool call...\n');
 
 // Generate the tool call XML
 const toolCall = `<invoke name="mcp_github_create_or_update_file">
-<parameter name="owner">cakesbyshiratzur
+<parameter name="owner">uzi-tzur

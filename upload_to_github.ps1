@@ -1,6 +1,6 @@
 # GitHub upload script
 param(
-    [string]$owner = "cakesbyshiratzur",
+    [string]$owner = "uzi-tzur",
     [string]$repo = "Uzi-s-Favorite-Sport-Teams",
     [string]$filePath = "public/logo.jpg",
     [string]$localFile = "C:\Uzi\Uzi's Teams Sport\public\logo.jpg"

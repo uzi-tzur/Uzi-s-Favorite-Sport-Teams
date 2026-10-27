@@ -8,7 +8,7 @@ console.log('First 50 chars:', base64Content.substring(0, 50));
 console.log('Last 50 chars:', base64Content.substring(base64Content.length - 50));
 console.log('\nReady to upload to GitHub using MCP tool');
 console.log('Parameters:');
-console.log('  Owner: cakesbyshiratzur');
+console.log('  Owner: uzi-tzur');
 console.log('  Repo: Uzi-s-Favorite-Sport-Teams');
 console.log('  Path: public/logo.jpg');
 console.log('  Branch: main');

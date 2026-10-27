@@ -126,7 +126,7 @@ None
 
 ### ✅ Successfully Deployed (October 13, 2025)
 
-**Repository**: `cakesbyshiratzur/Uzi-s-Favorite-Sport-Teams`  
+**Repository**: `uzi-tzur/Uzi-s-Favorite-Sport-Teams`  
 **Platform**: Vercel (auto-deploy enabled)  
 **Status**: Live and functional
 
