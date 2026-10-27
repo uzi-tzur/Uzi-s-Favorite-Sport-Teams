@@ -12,8 +12,26 @@ import {
   getAllAlarms,
   requestNotificationPermission,
   checkAlarms,
+  getAlarmChannels,
+  getAlarmMessage,
   type GameAlarm,
 } from "@/lib/alarms";
+
+const ALARM_CHECK_INTERVAL_MS = 30 * 1000;
+
+// Link to a one-game .ics file; iPhone opens it as "Add to Calendar"
+function getCalendarFileUrl(game: CalendarEvent): string {
+  const params = new URLSearchParams({
+    title: game.matchup,
+    start: game.startTime.toISOString(),
+    sport: game.sport,
+  });
+  const tv = [game.network, game.israeliTv].filter(Boolean).join(" / ");
+  if (tv) params.set("tv", tv);
+  if (game.location) params.set("location", game.location);
+  params.set("url", game.scheduleUrl);
+  return `/api/calendar/ics?${params.toString()}`;
+}
 function getDayLabels(numDays = 7) {
   return Array.from({ length: numDays }, (_, i) => {
     const date = new Date();
@@ -114,24 +132,33 @@ export default function CalendarClient({
   const [alarms, setAlarms] = useState<GameAlarm[]>([]);
   const [showAlarmsList, setShowAlarmsList] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Alarms that fired while the page was open, shown on screen as well
+  const [dueAlarms, setDueAlarms] = useState<GameAlarm[]>([]);
+  const [alarmNotice, setAlarmNotice] = useState<string | null>(null);
 
   // Memoize startOfWeek to avoid recreating on every render
   const startOfWeek = useMemo(() => new Date(startOfWeekStr), [startOfWeekStr]);
 
-  // Load alarms on mount
+  // Load alarms on mount, then check them while the page is open. Phones
+  // pause timers in background tabs, so also check on returning to the tab.
   useEffect(() => {
-    setAlarms(getAllAlarms());
-    
-    // Request notification permission
-    requestNotificationPermission();
-    
-    // Check alarms every minute
-    const interval = setInterval(() => {
-      checkAlarms();
+    const runCheck = () => {
+      const due = checkAlarms();
+      if (due.length) setDueAlarms((current) => [...current, ...due]);
       setAlarms(getAllAlarms());
-    }, 60000);
-    
-    return () => clearInterval(interval);
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") runCheck();
+    };
+
+    runCheck();
+    const interval = setInterval(runCheck, ALARM_CHECK_INTERVAL_MS);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
   }, []);
 
   // Filter events
@@ -174,19 +201,38 @@ export default function CalendarClient({
       .sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
   }, [filteredEvents]);
 
-  const handleToggleAlarm = (game: CalendarEvent & { gameId: string }) => {
+  const handleToggleAlarm = async (game: CalendarEvent & { gameId: string }) => {
     if (hasAlarm(game.gameId)) {
       removeAlarm(game.gameId);
-    } else {
-      addAlarm({
-        gameId: game.gameId,
-        matchup: game.matchup,
-        startTime: game.startTime,
-        sport: game.sport,
-        network: game.network,
-      });
+      setAlarms(getAllAlarms());
+      return;
     }
+
+    addAlarm({
+      gameId: game.gameId,
+      matchup: game.matchup,
+      startTime: game.startTime,
+      sport: game.sport,
+      network: game.network,
+      israeliTv: game.israeliTv,
+    });
     setAlarms(getAllAlarms());
+
+    // Ask here, from the click: browsers block prompts that aren't
+    const permission = await requestNotificationPermission();
+    if (permission === "unsupported") {
+      setAlarmNotice(
+        "This browser can't show alarm popups (iPhone Safari can't). The alarm will appear on this page if it's open — for a reminder on your phone, use 📅 Add to Calendar."
+      );
+    } else if (permission === "denied") {
+      setAlarmNotice(
+        "Notifications are blocked for this site, so the alarm will only appear on this page while it's open. Use 📅 Add to Calendar for a reminder that always works."
+      );
+    } else {
+      setAlarmNotice(
+        "Alarm set. It pops up 15 minutes before the game while this page is open — use 📅 Add to Calendar if you'll close it."
+      );
+    }
   };
 
   const handleRefresh = async () => {
@@ -328,6 +374,41 @@ export default function CalendarClient({
           </div>
         </div>
 
+        {/* Alarms that just fired */}
+        {dueAlarms.map((alarm) => (
+          <div
+            key={alarm.gameId}
+            role="alert"
+            className="flex items-start justify-between gap-3 rounded-lg border border-yellow-300 bg-yellow-50 p-4"
+          >
+            <div>
+              <p className="font-semibold text-yellow-900">⏰ Game Starting Soon!</p>
+              <p className="text-sm text-yellow-800">{getAlarmMessage(alarm)}</p>
+            </div>
+            <button
+              onClick={() =>
+                setDueAlarms((current) => current.filter((a) => a.gameId !== alarm.gameId))
+              }
+              className="text-sm font-medium text-yellow-800 hover:text-yellow-900"
+            >
+              Dismiss
+            </button>
+          </div>
+        ))}
+
+        {/* Result of the last Set Alarm */}
+        {alarmNotice && (
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 p-4 text-sm text-sky-900">
+            <p>{alarmNotice}</p>
+            <button
+              onClick={() => setAlarmNotice(null)}
+              className="font-medium text-sky-800 hover:text-sky-900"
+            >
+              OK
+            </button>
+          </div>
+        )}
+
         {/* Alarms List */}
         {showAlarmsList && (
           <div className="bg-white rounded-lg border border-gray-200 p-4 shadow-sm">
@@ -374,9 +455,9 @@ export default function CalendarClient({
                           Alarm: {timeFormatter.format(alarmDate)} CT • Game:{" "}
                           {timeFormatter.format(gameDate)} CT
                         </p>
-                        {alarm.network && (
+                        {getAlarmChannels(alarm) && (
                           <p className="text-xs text-gray-500">
-                            {alarm.network}
+                            {getAlarmChannels(alarm)}
                           </p>
                         )}
                       </div>
@@ -495,7 +576,7 @@ export default function CalendarClient({
                                 {game.location}
                               </p>
                             )}
-                            <div className="flex items-center gap-3">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                               <Link
                                 href={game.scheduleUrl}
                                 target="_blank"
@@ -504,6 +585,13 @@ export default function CalendarClient({
                               >
                                 View schedule ↗
                               </Link>
+                              <a
+                                href={getCalendarFileUrl(game)}
+                                className="inline-flex items-center gap-1 text-sm text-emerald-700 hover:text-emerald-800 font-medium"
+                                title="Adds the game to your phone or computer calendar with a reminder 15 minutes before"
+                              >
+                                📅 Add to Calendar
+                              </a>
                               <button
                                 onClick={() => handleToggleAlarm(game)}
                                 className={`inline-flex items-center gap-1 text-sm font-medium ${
@@ -666,7 +754,7 @@ export default function CalendarClient({
                               · {israelTimeFormatter.format(game.startTime)} Israel time
                             </p>
                           )}
-                          <div className="flex items-center gap-3">
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <Link
                               href={game.scheduleUrl}
                               target="_blank"
@@ -675,6 +763,13 @@ export default function CalendarClient({
                             >
                               View schedule ↗
                             </Link>
+                            <a
+                              href={getCalendarFileUrl(game)}
+                              className="inline-flex items-center gap-1 text-sm text-emerald-700 hover:text-emerald-800 font-medium"
+                              title="Adds the game to your phone or computer calendar with a reminder 15 minutes before"
+                            >
+                              📅 Add to Calendar
+                            </a>
                             <button
                               onClick={() => handleToggleAlarm(game)}
                               className={`inline-flex items-center gap-1 text-sm font-medium ${

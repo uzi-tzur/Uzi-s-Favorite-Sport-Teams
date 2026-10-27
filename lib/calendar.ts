@@ -20,6 +20,8 @@ type ESPNLeagueConfig = {
   type: "espn-league";
   sportPath: string;
   leaguePath: string;
+  // Keep only games involving these clubs (ESPN display names); all games if omitted
+  onlyTeams?: string[];
   displayName: string;
 };
 
@@ -205,6 +207,7 @@ const teamConfigs: TeamScheduleConfig[] = [
       sportPath: "soccer",
       leaguePath: "esp.1",
       displayName: "La Liga",
+      onlyTeams: ["Barcelona", "Real Madrid", "Elche", "Atlético Madrid"],
     },
   },
   {
@@ -497,6 +500,11 @@ async function fetchFromEspn(
   }
 }
 
+// "Atlético Madrid" and "Atletico Madrid" compare equal
+function normalizeClubName(name: string): string {
+  return name.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase();
+}
+
 async function fetchFromEspnLeague(
   config: TeamScheduleConfig & { source: ESPNLeagueConfig }
 ): Promise<CalendarEvent[]> {
@@ -532,6 +540,7 @@ async function fetchFromEspnLeague(
     allEvents = responses.flat();
 
     const now = new Date();
+    const onlyTeams = config.source.onlyTeams?.map(normalizeClubName);
 
     return allEvents
       .map((event: ESPNEvent) => {
@@ -554,6 +563,12 @@ async function fetchFromEspnLeague(
           .join(" vs. ");
 
         if (!matchup) return null;
+
+        if (onlyTeams && !competitors.some((c: ESPNCompetitor) =>
+          onlyTeams.includes(normalizeClubName(c.team?.displayName ?? ""))
+        )) {
+          return null;
+        }
 
         return {
           teamName: config.teamName,
